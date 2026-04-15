@@ -1,0 +1,109 @@
+# Event Booking App – Auth Module (Phase 1: Login API)
+
+Xây dựng phần xác thực người dùng gồm: khởi tạo Git, cấu hình database MySQL, và implement Login API theo đúng API Spec được cung cấp.
+
+## Proposed Changes
+
+---
+
+### ⚙️ Git & Project Config
+
+#### [MODIFY] [pom.xml](file:///c:/Users/ducan/Downloads/demo/demo/pom.xml)
+- Thêm dependency: `mysql-connector-j`, `io.jsonwebtoken:jjwt-api`, `jjwt-impl`, `jjwt-jackson`
+- Sửa dependency test (xóa các artifact không tồn tại như `spring-boot-starter-data-jpa-test`)
+
+#### [MODIFY] [application.properties](file:///c:/Users/ducan/Downloads/demo/demo/src/main/resources/application.properties)
+- Cấu hình MySQL datasource (`spring.datasource.*`)
+- Cấu hình JPA/Hibernate (`spring.jpa.hibernate.ddl-auto=validate`, dialect MySQL)
+- Cấu hình JWT secret & expiration
+
+---
+
+### 🗄️ Database Schema
+
+#### [NEW] schema.sql (tại `src/main/resources/`)
+```sql
+CREATE TABLE IF NOT EXISTS users (
+  id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+  full_name  VARCHAR(100) NOT NULL,
+  email      VARCHAR(150) NOT NULL UNIQUE,
+  password   VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+### 🏗️ Spring Boot Structure
+
+Package gốc: `com.example.demo`
+
+```
+src/main/java/com/example/demo/
+├── entity/
+│   └── User.java                    # JPA Entity map bảng users
+├── repository/
+│   └── UserRepository.java          # JpaRepository + findByEmail()
+├── dto/
+│   ├── request/LoginRequest.java    # { email, password } + @Valid annotations
+│   ├── response/LoginResponse.java  # { accessToken, expire }
+│   ├── ApiResponse.java             # wrapper { success, message, data }
+│   └── ValidationError.java        # { field, message }
+├── service/
+│   ├── AuthService.java             # interface
+│   └── impl/AuthServiceImpl.java    # xác thực, tạo JWT
+├── controller/
+│   └── AuthController.java          # POST /api/auth/login
+├── security/
+│   ├── JwtUtil.java                 # generateToken(), validateToken()
+│   ├── JwtAuthFilter.java           # OncePerRequestFilter
+│   └── SecurityConfig.java          # permitAll /api/auth/**, BCryptEncoder
+└── exception/
+    └── GlobalExceptionHandler.java  # @ControllerAdvice xử lý 422 / 401
+```
+
+---
+
+### 📋 API Response Behavior
+
+| Case | HTTP Status | Response |
+|------|-------------|----------|
+| Validation lỗi (email/password sai format) | 422 | `{ success: false, message: "Validation failed", errors: [...] }` |
+| Email/password không khớp | 401 | `{ success: false, message: "Invalid email or password" }` |
+| Đăng nhập thành công | 200 | `{ success: true, message: "Login successful", data: { accessToken, expire } }` |
+
+---
+
+## Verification Plan
+
+### Build Check
+```powershell
+cd c:\Users\ducan\Downloads\demo\demo
+.\mvnw.cmd clean package -DskipTests
+```
+
+### Manual API Test (Postman / curl)
+1. Khởi động app: `.\mvnw.cmd spring-boot:run`
+2. **Test 422 – Validation failed** (email sai format):
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"notanemail","password":""}'
+```
+Expected: HTTP 422, body chứa `errors` array
+
+3. **Test 401 – Sai thông tin**:
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"wrongpass"}'
+```
+Expected: HTTP 401, `{ "success": false, "message": "Invalid email or password" }`
+
+4. **Test 200 – Login thành công** (sau khi insert user thủ công vào DB):
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}'
+```
+Expected: HTTP 200, có `accessToken`
